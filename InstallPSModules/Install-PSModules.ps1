@@ -1,10 +1,10 @@
 <#
  .Synopsis
-  Installs and imports PowerShell modules defined in psmodules.json within the local working directory.
+  Installs and imports PowerShell modules defined in psmodules.json.
 
  .Description
   Like `dotnet tool install` for PowerShell Modules.  psmodules.json file defines the modules to be installed.
-  Modules are installed to a local PSModules folder and imported.
+  Modules are installed to the user scope.
 
   psmodules.json schema is:
   {
@@ -18,9 +18,8 @@
 #>
 
 $manifestFileName = "psmodules.json"
-$modulesFolder = "PSModules"
 
-function FindManifest() {
+function ReadManifest() {
   $manifest = Get-ChildItem $manifestFileName
   $data = Get-Content $manifest | ConvertFrom-Json
   $data
@@ -37,13 +36,13 @@ function InstallModules($data) {
 }
 
 function IsInstalled($packageName, $version) {
-  Test-Path ".\$modulesFolder\$packageName\$version"
+  $availableModule = get-module -ListAvailable -FullyQualifiedName @{ ModuleName = $packageName; RequiredVersion = $version }
+  $availableModule -and @($availableModule).Length -eq 1
 }
 
-function InstallModule($packageName, $version, $repository = 'PSGallery') {
+function InstallModule($packageName, $version) {
   Write-Host "Installing $packageName $version..."
-  Find-Module -Name $packageName -RequiredVersion $version -Repository $repository `
-    | Save-Module -Path ".\$modulesFolder"
+  Install-Module $packageName -RequiredVersion $version -Scope CurrentUser
 }
 
 function ImportModules($data) {
@@ -51,14 +50,15 @@ function ImportModules($data) {
 }
 
 function ImportModule($packageName, $version) {
+  # to ensure there are not multiple versions of the same module loaded,
+  # first remove the module (all versions), then import it.
   $m = get-module $packageName
   if ($m -and @($m).Length -eq 1) {
     remove-module $packageName
   }
-  $p = Expand-Path ".\$modulesFolder\$packageName\$version\*.psm1"
-  Import-Module -name $p -Force
+  Import-Module -FullyQualifiedName @{ ModuleName = $packageName; RequiredVersion = $version } -Force
 }
 
-$data = FindManifest
+$data = ReadManifest
 InstallModules $data
 ImportModules $data
